@@ -11,9 +11,8 @@ library(survminer)
 library(survey)
 
 # Loading CSV file with patient info
-dataDF <- read.csv(file=paste0("L:/LovbeskyttetMapper/MMM database/PD-L1 neg/files_analysis_csv_apr2023/analyses_for_review/", "PD_1_ipinivo_stage_minuscombo_below1.csv"), header = TRUE,check.names = FALSE,sep = ";",dec = ",",stringsAsFactors = FALSE)
-# head(dataDF)
-# colnames(dataDF)
+dataDF <- read.csv(file=paste0("path_to_file", "file.csv"), header = TRUE,check.names = FALSE,sep = ";",dec = ",",stringsAsFactors = FALSE)
+head(dataDF)
 
 ## HERE we define for which parameters we want to do univariate analysis, and which to include in the multivariate survival analysis.
 ## PLEASE define name as it is on the csv file, the name needs to be in BRACKETS
@@ -95,7 +94,6 @@ ggsurvplot(fit_overall,
 
 # Log-Rank test comparing survival curves: survdiff()
 surv_diff <- survdiff(Surv(dataDF$OS_days, dataDF$Dead_mel) ~ treatment_correct, data=data)
-surv_diff
 
 # Perform nearest neighbor matching without weights
 psm_data <- matchit(treatment_correct ~ gender + age_1st_treat + braf_correct + adjuvant_correct + metastase_hjerne + 
@@ -112,48 +110,8 @@ plot(summary(psm_data), abs = F)
 model <- glm(treatment_correct ~ gender + age_1st_treat  + braf_correct + adjuvant_correct + metastase_hjerne + LDH + PS + stage, data = data, family = "binomial")
 coefficients(model)
 
-# # Fit logistic regression model to predict treatment assignment
-# ps_model <- glm(treatment_correct ~ gender + braf_correct + adjuvant_correct + metastase_hjerne +
-#                   LDH + PS + stage, data = data, family = "binomial")
-
-# # Calculate propensity scores
-# prop_scores <- predict(ps_model, type = "response")
-# 
-# # Calculate standardized mortality ratio weights
-# data$smrw <- ifelse(data$treatment_correct == "Ipi+Nivo", 1, prop_scores / (1-prop_scores))
-
-# Converting predicted probabilities into weights 
-# data <- data %>%
-#   mutate(prop_scores = predict(ps_model, type = "response"),
-#          weight_glm = ifelse(treatment_correct == T, 1, prop_scores / (1-prop_scores)))
-# 
-# ggplot(data, aes(x = weight_glm, fill = as.factor(treatment_correct))) +
-#   geom_density(alpha = 0.5, colour = "grey50") +
-#   geom_rug() +
-#   scale_x_log10(breaks = c(1, 5, 10, 20, 40)) +
-#   ggtitle("Distribution of inverse probability weights")
-
-
-
-# Create a data frame with the propensity scores and treatment status
-# psm_plot_data <- data.frame(treatment = psm_data$model$data$treatment_correct,
-#                             prop_score = predict(ps_model, type = "response"))
-# 
-# # Plot the propensity scores for the treatment and control groups
-# ggplot(psm_plot_data, aes(x = predict(ps_model, type = "response"), fill = factor(treatment))) +
-#   geom_density(alpha = 0.5) +
-#   scale_fill_manual(values = c("#0072B2", "#E69F00")) +
-#   theme_classic() +
-#   xlab("Propensity Score") +
-#   ylab("Density") +
-#   ggtitle("Distribution of Propensity Scores")
-
 # Fit Cox proportional hazards regression model to matched data
 matched_data <- match.data(psm_data)
-
-# Save matched data
-#save(matched_data, file = "C:/Users/SKHA0069/Documents/Eva/data/matched_data_PD_1_ipinivo_stage_below1.Rdata")
-write.csv(matched_data$patient_id, file = "C:/Users/SKHA0069/Documents/Eva/data/revision/patient_id_164_164_matched_caliper0.05_data_PD_1_ipinivo_stage_below1.csv", row.names = F)
 
 # Compute the Kaplan-Meier model on Match data
 fit_match = survfit(Surv(matched_data$OS_days, matched_data$Dead_mel) ~ treatment_correct, data=matched_data)
@@ -176,7 +134,6 @@ surv_diff_matched <- survdiff(Surv(matched_data$OS_days, matched_data$Dead_mel) 
 surv_diff_matched
 
 # Fit Cox regression model to matched dataset
-# http://www.sthda.com/english/wiki/cox-proportional-hazards-model
 cox_model <- coxph(Surv(OS_days, Dead_mel) ~ treatment_correct + gender + braf_correct + adjuvant_correct + metastase_hjerne +
                      LDH +  PS + stage, data = matched_data)
 
