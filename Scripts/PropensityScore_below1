@@ -1,0 +1,193 @@
+#Clean workspace
+rm(list = ls(envir = .GlobalEnv), envir = .GlobalEnv)
+
+library(data.table)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(MatchIt)
+library(survival)
+library(survminer)
+library(survey)
+
+# Loading CSV file with patient info
+dataDF <- read.csv(file=paste0("L:/LovbeskyttetMapper/MMM database/PD-L1 neg/files_analysis_csv_apr2023/analyses_for_review/", "PD_1_ipinivo_stage_minuscombo_below1.csv"), header = TRUE,check.names = FALSE,sep = ";",dec = ",",stringsAsFactors = FALSE)
+# head(dataDF)
+# colnames(dataDF)
+
+## HERE we define for which parameters we want to do univariate analysis, and which to include in the multivariate survival analysis.
+## PLEASE define name as it is on the csv file, the name needs to be in BRACKETS
+features <- c("gender", "age_1st_treat","treatment_correct","braf_correct","adjuvant_correct","metastase_hjerne",
+              "pd_l1_correct","LDH","PS", "stage")
+
+## Define which columns include survival data
+OS_time <- c("OS_days")
+OS_status <- c("Dead_mel")
+PFS_time <- c("PFS_days")
+PFS_status <- c("Progressed")
+## DEFINE IF YOU ARE DOING OS OR PFS
+surv_time <-PFS_time
+surv_status <-PFS_status
+surv_time_label <- "PFS"
+# KM plots labels
+xlabel=".PFS.days"
+
+## DEFINE WHICH COLUMNS ARE CATEGORICAL
+categ_feats <-c("gender","treatment_correct","braf_correct","adjuvant_correct","metastase_hjerne",
+                "pd_l1_correct","LDH","PS", "stage")
+
+## DEFINE WHICH COLUMNS ARE NUMERICAL
+# we also add the status and time columns
+numeric_feats <-c("OS_days", "Dead_mel","PFS_days","Progressed","age_1st_treat")
+
+# Remove spaces from column names and features.
+colnames(dataDF) <- gsub(" ","_",colnames(dataDF))
+features <- gsub(" ","_",features)
+categ_feats <- gsub(" ","_",categ_feats)
+numeric_feats <- gsub(" ","_",numeric_feats)
+OS_time <- gsub(" ","_",OS_time)
+OS_status <- gsub(" ","_",OS_status)
+PFS_time <- gsub(" ","_",PFS_time)
+PFS_status <- gsub(" ","_",PFS_status)
+surv_time <- gsub(" ","_",surv_time)
+surv_status <- gsub(" ","_",surv_status)
+
+## FIRST MAKE SURE THERE ARE NO BLANKS ANYWHERE IN THE DATA
+## Find non-Numeric columns
+num_cols <- unlist(lapply(dataDF, is.numeric))         # Identify numeric columns
+dataDF <- cbind(apply(dataDF[,!num_cols], 2, str_remove_all, " "),dataDF[,num_cols])   # Remove blanks
+
+### NOW MAKE SURE THAT THE COLUMNS ARE IN THE CORRECT FORMAT NEEDED FOR ANALYSIS.
+## Numeric columns
+dataDF <- dataDF %>% mutate(across(all_of(numeric_feats), as.numeric))
+
+## Categorical
+dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.character))
+
+# We need to transform character columns to categorical, to have the different levels
+dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.factor))
+dataDF <- dataDF %>% select(all_of(c(colnames(dataDF)[1], OS_time,OS_status,PFS_time,PFS_status, features))) %>% distinct()
+
+## LET's LOOK AT A SUMMARY OF THE DATA
+summary(dataDF)
+
+# Survival object
+surv_obj <- Surv(dataDF$OS_days, dataDF$Dead_mel)
+
+# Combine all variables into a data frame
+data <- cbind(dataDF, surv_obj)
+
+# Compute the Kaplan-Meier model
+fit_overall = survfit(Surv(dataDF$OS_days, dataDF$Dead_mel) ~ treatment_correct, data=data)
+print(fit_overall)
+
+ggsurvplot(fit_overall,
+           data=data,
+           xlab="Days",
+           ylab="Overall survival probability",
+           pval = TRUE, conf.int = TRUE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           linetype = "strata", # Change line type by groups
+           surv.median.line = "hv", # Specify median survival
+           ggtheme = theme_bw(), # Change ggplot2 theme
+           palette = c("#E7B800", "#2E9FDF"))
+
+# Log-Rank test comparing survival curves: survdiff()
+surv_diff <- survdiff(Surv(dataDF$OS_days, dataDF$Dead_mel) ~ treatment_correct, data=data)
+surv_diff
+
+# Perform nearest neighbor matching without weights
+psm_data <- matchit(treatment_correct ~ gender + age_1st_treat + braf_correct + adjuvant_correct + metastase_hjerne + 
+                      LDH + PS + stage, data = data, method = "nearest", distance = "logit", ratio = 1,
+                      caliper = 0.05, std.caliper = F)
+
+# Assess balance between treatment groups
+summary(psm_data)
+
+## Love plot matching
+plot(summary(psm_data), abs = F)
+
+# Fit a logistic regression model to estimate propensity scores
+model <- glm(treatment_correct ~ gender + age_1st_treat  + braf_correct + adjuvant_correct + metastase_hjerne + LDH + PS + stage, data = data, family = "binomial")
+coefficients(model)
+
+# # Fit logistic regression model to predict treatment assignment
+# ps_model <- glm(treatment_correct ~ gender + braf_correct + adjuvant_correct + metastase_hjerne +
+#                   LDH + PS + stage, data = data, family = "binomial")
+
+# # Calculate propensity scores
+# prop_scores <- predict(ps_model, type = "response")
+# 
+# # Calculate standardized mortality ratio weights
+# data$smrw <- ifelse(data$treatment_correct == "Ipi+Nivo", 1, prop_scores / (1-prop_scores))
+
+# Converting predicted probabilities into weights 
+# data <- data %>%
+#   mutate(prop_scores = predict(ps_model, type = "response"),
+#          weight_glm = ifelse(treatment_correct == T, 1, prop_scores / (1-prop_scores)))
+# 
+# ggplot(data, aes(x = weight_glm, fill = as.factor(treatment_correct))) +
+#   geom_density(alpha = 0.5, colour = "grey50") +
+#   geom_rug() +
+#   scale_x_log10(breaks = c(1, 5, 10, 20, 40)) +
+#   ggtitle("Distribution of inverse probability weights")
+
+
+
+# Create a data frame with the propensity scores and treatment status
+# psm_plot_data <- data.frame(treatment = psm_data$model$data$treatment_correct,
+#                             prop_score = predict(ps_model, type = "response"))
+# 
+# # Plot the propensity scores for the treatment and control groups
+# ggplot(psm_plot_data, aes(x = predict(ps_model, type = "response"), fill = factor(treatment))) +
+#   geom_density(alpha = 0.5) +
+#   scale_fill_manual(values = c("#0072B2", "#E69F00")) +
+#   theme_classic() +
+#   xlab("Propensity Score") +
+#   ylab("Density") +
+#   ggtitle("Distribution of Propensity Scores")
+
+# Fit Cox proportional hazards regression model to matched data
+matched_data <- match.data(psm_data)
+
+# Save matched data
+#save(matched_data, file = "C:/Users/SKHA0069/Documents/Eva/data/matched_data_PD_1_ipinivo_stage_below1.Rdata")
+write.csv(matched_data$patient_id, file = "C:/Users/SKHA0069/Documents/Eva/data/revision/patient_id_164_164_matched_caliper0.05_data_PD_1_ipinivo_stage_below1.csv", row.names = F)
+
+# Compute the Kaplan-Meier model on Match data
+fit_match = survfit(Surv(matched_data$OS_days, matched_data$Dead_mel) ~ treatment_correct, data=matched_data)
+print(fit_match)
+
+ggsurvplot(fit_match,
+           data=matched_data,
+           xlab="Days",
+           ylab="Matched data survival probability",
+           pval = TRUE, conf.int = TRUE,
+           risk.table = TRUE, # Add risk table
+           risk.table.col = "strata", # Change risk table color by groups
+           linetype = "strata", # Change line type by groups
+           #surv.median.line = "hv", # Specify median survival
+           ggtheme = theme_bw(), # Change ggplot2 theme
+           palette = c("#E7B800", "#2E9FDF"))
+
+# Log-Rank test comparing survival curves: survdiff()
+surv_diff_matched <- survdiff(Surv(matched_data$OS_days, matched_data$Dead_mel) ~ treatment_correct, data=matched_data)
+surv_diff_matched
+
+# Fit Cox regression model to matched dataset
+# http://www.sthda.com/english/wiki/cox-proportional-hazards-model
+cox_model <- coxph(Surv(OS_days, Dead_mel) ~ treatment_correct + gender + braf_correct + adjuvant_correct + metastase_hjerne +
+                     LDH +  PS + stage, data = matched_data)
+
+# Print summary of the Cox regression model
+summary(cox_model)
+
+# Create a forest plot
+ggforest(cox_model)
+
+# Plot the baseline survival function
+ggsurvplot(survfit(cox_model), 
+           data=matched_data,
+           palette= '#2E9FDF',
+           ggtheme = theme_minimal())
