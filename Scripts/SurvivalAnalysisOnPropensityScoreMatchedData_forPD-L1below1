@@ -1,0 +1,2094 @@
+##### This script was used to perform Survival Analysis On Propensity Score based Matched Data for PD-L1 below1 and create HTML reports #####
+
+---
+
+title: "Response and outcomes in melanoma"
+
+subtitle: <center> Survival uni- and multivariate analysis</center>
+
+author: "Aimilia Schina/Marco Donia"
+
+date: '`r paste("First created on January 2022. Updated on ", format(Sys.Date(), "%d %B %Y"))`'
+
+output:
+
+  html_document:
+
+    css: style.css
+
+    code_folding: hide
+
+    #smooth_scroll: yes
+
+    fig_caption: yes
+
+    #highlight: textmate
+
+    #theme: cerulean
+
+    #theme: simplex
+
+    toc: yes
+
+    toc_float:
+
+      collapsed: true
+
+      smooth_scroll: true
+
+    toc_depth: 5
+
+    number_sections: true
+
+    #df_print: paged
+
+ 
+
+---
+
+ 
+
+ 
+
+```{r message=FALSE}
+
+RNGkind(sample.kind = "Rounding")# It has to do with change in set.seet() though now I am not using set seed for mocca, still results are different if I do not set that.
+
+## Clear R-workspace
+
+rm(list=ls(all=TRUE))
+
+# ## Set location of R-script as working directory
+
+# path.act <- dirname(sys.frame(1)$ofile)
+
+# setwd(path.act)
+
+## Close all graphic devices
+
+graphics.off()
+
+#####################
+
+### Load packages ###
+
+#####################
+
+library(pacman)
+
+pacman::p_load(extrafont,DT,stringr,dplyr,plyr,tibble,tidyverse,strex,data.table,ggstatsplot,hrbrthemes,ggstatsplot,reshape,pander,data.table,ggrepel,scales,survival,survminer,dataMaid,gridExtra,tidytidbits,survivalAnalysis,gtsummary, Cairo,Amelia,officer,mice,naniar)
+
+ 
+
+extrafont::loadfonts(device="win")
+
+windowsFonts(sans="Palatino Linotype")
+
+loadfonts(device="win")
+
+loadfonts(device="postscript")
+
+ 
+
+ 
+
+# library(tidyverse)
+
+# library(tidytidbits)
+
+# library(survivalAnalysis)
+
+```
+
+ 
+
+```{r,warning=F, message=F}
+
+ 
+
+```
+
+ 
+
+```{r,warning=F, message=F}
+
+###########################
+
+### Main analysis paths ###
+
+###########################
+
+projectVersionDirName <- "R analyses/"
+
+ 
+
+# Main analysis paths
+
+projectPath <- paste0("L:/LovbeskyttetMapper/MMM database/Acquired resistance/Files_csv/")
+
+projectScriptPath <- "L:/LovbeskyttetMapper/MMM database/Acquired resistance/"
+
+scriptDataPath <- paste0(projectScriptPath,projectVersionDirName)
+
+projectDataPath <- paste0(scriptDataPath, "Data/")
+
+projectRDataPath <- paste0(scriptDataPath, "RData/")
+
+figuresPath <- paste0(scriptDataPath,"/Figures")
+
+reportsPath <- paste0(scriptDataPath,"/Reports")                                                                                                    
+
+ 
+
+######################
+
+## Tools Data paths ##
+
+######################
+
+ 
+
+##########################
+
+### FOLDER/FILES NAMES ###
+
+##########################
+
+ 
+
+############################
+
+## Project Data Filenames ##
+
+############################
+
+ 
+
+ 
+
+##################################
+
+### LOAD SOURCE FUNCTIONS FILE ###
+
+##################################
+
+source(paste0(projectScriptPath,projectVersionDirName,"/","1.0.0_Seasonal_aPD1_Survival_functions.v1.R"))
+
+ 
+
+#####################
+
+### File suffixes ###
+
+#####################
+
+version <- "1.0"
+
+Rdata.suffix <- ".RData"
+
+ 
+
+ 
+
+######################
+
+### Plot variables ###
+
+######################
+
+ 
+
+ 
+
+```
+
+ 
+
+# Data
+
+ 
+
+## Loading patient data
+
+ 
+
+```{r dataLoad,warning=F, message=F,eval=TRUE}
+
+# Loading CSV file with patient info
+
+ 
+
+dataDF <- read.csv(file=paste0("L:/LovbeskyttetMapper/MMM database/Acquired resistance/Files_csv/", "csv_ipinivo_pd1_partial_prop0.05.csv"), header = TRUE,check.names = FALSE,sep = ";",dec = ",",stringsAsFactors = FALSE)
+
+# head(dataDF)
+
+# colnames(dataDF)
+
+ 
+
+# Correct First column name
+
+colnames(dataDF)[1] <- "patient_id"
+
+ 
+
+# Filter to include only rows where bortext is "Partial" or "Complete"
+
+dataDF <- dataDF[dataDF$bortext == "Partial", ]
+
+ 
+
+```
+
+ 
+
+## Pre-processing of data
+
+ 
+
+* Check that all columns have no spaces etc, especially character columns,
+
+* transform character columns to factors.
+
+* Check if all factors are ok.
+
+* Check numerical columns.
+
+ 
+
+We first need to define which columns we want as character (categorical), and which need to be numerical. Sometimes things get messed up with excel files.
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+## HERE we define for which parameters we want to do univariate analysis, and which to include in the multivariate survival analysis.
+
+## PLEASE define name as it is on the csv file, the name needs to be in BRACKETS
+
+features <- c("gender", "age_1st_treat","regime_correct","braf_correct","received_adjuvant_therapy","Line_correct",
+
+              "Brain_metastases","LDH","PS", "stage_2")
+
+ 
+
+## Define which columns include survival data
+
+OS_time <- c("MSS_days")
+
+OS_status <- c("Dead_mel")
+
+PFS_time <- c("PFS_days")
+
+PFS_status <- c("Progressed")
+
+## DEFINE IF YOU ARE DOING OS OR PFS
+
+surv_time <-OS_time
+
+surv_status <-OS_status
+
+surv_time_label <- "OS"
+
+# KM plots labels
+
+xlabel=".OS.days"
+
+ 
+
+## DEFINE WHICH COLUMNS ARE CATEGORICAL
+
+categ_feats <-c("gender","regime_correct","braf_correct","received_adjuvant_therapy","Line_correct",
+
+              "Brain_metastases","LDH","PS","stage_2")
+
+ 
+
+## DEFINE WHICH COLUMNS ARE NUMERICAL
+
+# we also add the status and time columns
+
+numeric_feats <-c("MSS_days", "Dead_mel","PFS_days","Progressed","age_1st_treat")
+
+ 
+
+# Remove spaces from column names and features.
+
+ 
+
+colnames(dataDF) <- gsub(" ","_",colnames(dataDF))
+
+features <- gsub(" ","_",features)
+
+categ_feats <- gsub(" ","_",categ_feats)
+
+numeric_feats <- gsub(" ","_",numeric_feats)
+
+OS_time <- gsub(" ","_",OS_time)
+
+OS_status <- gsub(" ","_",OS_status)
+
+PFS_time <- gsub(" ","_",PFS_time)
+
+PFS_status <- gsub(" ","_",PFS_status)
+
+surv_time <- gsub(" ","_",surv_time)
+
+surv_status <- gsub(" ","_",surv_status)
+
+```
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+ 
+
+## FIRST MAKE SURE THERE ARE NO BLANKS ANYWHERE IN THE DATA
+
+## Find non-Numeric columns
+
+num_cols <- unlist(lapply(dataDF, is.numeric))         # Identify numeric columns
+
+dataDF <- cbind(apply(dataDF[,!num_cols], 2, str_remove_all, " "),dataDF[,num_cols])   # Remove blanks
+
+ 
+
+### NOW MAKE SURE THAT THE COLUMNS ARE IN THE CORRECT FORMAT NEEDED FOR ANALYSIS.
+
+## Numeric columns
+
+dataDF <- dataDF %>% mutate(across(all_of(numeric_feats), as.numeric))
+
+## Categorical
+
+dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.character))
+
+# We need to transform character columns to categorical, to have the different levels
+
+dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.factor))
+
+```
+
+ 
+
+Now that we have transformed the columns we want, we filter the dataframe for the specific columns we selected
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+dataDF <- dataDF %>% select(all_of(c(OS_time,OS_status,PFS_time,PFS_status, features))) %>% distinct()
+
+ 
+
+## LET's LOOK AT A SUMMARY OF THE DATA
+
+ 
+
+summary(dataDF)
+
+```
+
+ 
+
+ 
+
+ 
+
+We see that instead of NA, there is an annotation of Notavailable in some of the patient. We need to transform that to NA values and then remove those patients from the table, to have clean data.
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+ 
+
+# to correct for this first make factors to characters
+
+dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.character))
+
+ 
+
+dataDF <-
+
+  sapply(dataDF, function(x) {
+
+    ifelse(x=="Notavailable",
+
+           NA,
+
+           x)
+
+  }, simplify = TRUE) %>% as.data.frame() %>% droplevels()
+
+ 
+
+ 
+
+dataDF <-
+
+  sapply(dataDF, function(x) {
+
+    ifelse(x=="",
+
+           NA,
+
+           x)
+
+  }, simplify = TRUE) %>% as.data.frame() %>% droplevels()
+
+ 
+
+## REPEAT PROCESS ABOVE
+
+ 
+
+### NOW MAKE SURE THAT THE COLUMNS ARE IN THE CORRECT FORMAT NEEDED FOR ANALYSIS.
+
+## Numeric columns
+
+dataDF <- dataDF %>% mutate(across(all_of(numeric_feats), as.numeric))
+
+## Categorical
+
+dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.character))
+
+# We need to transform character columns to categorical, to have the different levels
+
+dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.factor))
+
+summary(dataDF)
+
+```
+
+ 
+
+Check for bad data format in case of missing values:
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE,fig.show = 'hold', fig.width=12, fig.height=8}
+
+lapply(features, function(x) identifyMissing(dataDF[[x]]))
+
+```
+
+ 
+
+Make a full report with general checks for problems in the data, the report is included in the folder of the project.
+
+```{r,warning=F, message=F,eval=FALSE}
+
+ 
+
+makeDataReport(dataDF,file=paste0(scriptDataPath,"datasetCheck_problems"), reportTitle="Survival and Clinical data Check")
+
+```
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE,fig.show = 'hold', fig.width=12, fig.height=8}
+
+missmap(dataDF, col=c("Indian red", "grey"), legend=FALSE,x.cex=1,margins=c(9,5))
+
+```
+
+ 
+
+There are a total of `r nrow(dataDF[!complete.cases(dataDF), ])` patients with NA values in one or more of the variables of interest. Below table with those patients.
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE,fig.show = 'hold', fig.width=12, fig.height=8}
+
+ 
+
+```
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+ 
+
+datatable(dataDF[!complete.cases(dataDF), ], extensions = 'Buttons', options = list(
+
+    dom = 'Bfrtip',
+
+    buttons = c('copy', 'excel', 'csv' ),
+
+    scrollX=TRUE,
+
+    pageLength=15
+
+  ),
+
+  caption = 'Patients with NA values'
+
+)
+
+```
+
+ 
+
+ 
+
+Now we remove all patients with NA values, to have complete data.
+
+ 
+
+Total of patients is `r nrow(dataDF)`
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+dataDF.final <- dataDF %>% filter(complete.cases(.)) %>% droplevels()
+
+ 
+
+
+ 
+
+dataDF.final$braf_correct <- factor(dataDF.final$braf_correct, levels = c("BRAF_normal", "BRAF_mutant"))
+
+# dataDF.final$`BRAF status` <- factor(dataDF.final$`BRAF status`,levels = c("BRAFnormal","BRAFmutant","Notavailable"))
+
+ 
+
+dataDF.final$gender <- factor(dataDF.final$gender,levels = c("M","F"))
+
+dataDF.final$regime_correct <- factor(dataDF.final$regime_correct,levels = c("Anti-PD1", "ipi+nivo"))
+
+dataDF.final$PS <- factor(dataDF.final$PS,levels = c("PS>/=2","PS=0-1"))
+
+dataDF.final$received_adjuvant_therapy <- factor(dataDF.final$"received_adjuvant_therapy",levels = c("Yes","No"))
+
+dataDF.final$stage_2 <- factor(dataDF.final$stage_2,levels = c("M1c/M1d", "III/M1a/M1b"))
+
+dataDF.final$Brain_metastases <- factor(dataDF.final$Brain_metastases,levels = c("Yes","No"))
+
+dataDF.final$Line_correct <- factor(dataDF.final$Line_correct,levels = c("First","Other"))
+
+dataDF.final$LDH <- factor(dataDF.final$LDH,levels = c("normal","high"))
+
+ 
+
+# DO THE SAME FOR ORIGINAL DATAF WITH MISSING
+
+dataDF.final$braf_correct <- factor(dataDF.final$braf_correct, levels = c("BRAF_normal", "BRAF_mutant"))
+
+# dataDF.final$`BRAF status` <- factor(dataDF.final$`BRAF status`,levels = c("BRAFnormal","BRAFmutant","Notavailable"))
+
+ 
+
+dataDF.final$gender <- factor(dataDF.final$gender,levels = c("M","F"))
+
+dataDF.final$regime_correct <- factor(dataDF.final$regime_correct,levels = c("Anti-PD1", "ipi+nivo"))
+
+dataDF.final$PS <- factor(dataDF.final$PS,levels = c("PS>/=2","PS=0-1"))
+
+dataDF.final$received_adjuvant_therapy <- factor(dataDF.final$"received_adjuvant_therapy",levels = c("Yes","No"))
+
+dataDF.final$stage_2 <- factor(dataDF.final$stage_2,levels = c("M1c/M1d", "III/M1a/M1b"))
+
+dataDF.final$Brain_metastases <- factor(dataDF.final$Brain_metastases,levels = c("Yes","No"))
+
+dataDF.final$Line_correct <- factor(dataDF.final$Line_correct,levels = c("First","Other"))
+
+dataDF.final$LDH <- factor(dataDF.final$LDH,levels = c("normal","high"))
+
+ 
+
+# ## REMOVE NA LDH values and BRAF uknown mut samples
+
+# dataDF <- dataDF %>% tidyr::drop_na(LDH) %>% droplevels()
+
+ 
+
+ 
+
+```
+
+ 
+
+Total of patients after removing NA values is `r nrow(dataDF.final)`
+
+ 
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+ 
+
+```
+
+ 
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+ 
+
+datatable(dataDF.final, extensions = 'Buttons', options = list(
+
+    dom = 'Bfrtip',
+
+    buttons = c('copy', 'excel', 'csv' ),
+
+    scrollX=TRUE,
+
+    pageLength=15
+
+  ),
+
+  caption = 'Survival data and other prognostic parameters'
+
+)
+
+```
+
+As a first step, we want to get a feeling for the data and have a look at the median survival. You need to tell the analyse_survival method which columns to regard as time and censoring indicator. We do that with the vars() method from dplyr, which allows to give the plain variable names. Passing column names as strings is also possible.
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+ 
+
+dataDF.final %>%
+
+  analyse_survival(c(surv_time,surv_status))  %>%
+
+  print()#timespan_unit="months"
+
+```
+
+ 
+
+# Multiple Univariate Analyses - INCLUDING MISSING DATA {.tabset .tabset-fade .tabset-pills}
+
+ 
+
+Perform Cox regression on right-censored data.
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8, eval=TRUE}
+
+ 
+
+if(exists("covariate_labels")){
+
+    map(features, function(by){
+
+    analyse_multivariate(dataDF,
+
+                         c(surv_time,surv_status),
+
+                         covariates = list(by), # covariates expects a list
+
+                         covariate_name_dict = covariate_names,
+
+                         covariate_label_dict = covariate_labels)
+
+  }) %>%
+
+    forest_plot(
+
+                factor_labeller = covariate_names,
+
+                endpoint_labeller = c(time=surv_time_label),
+
+                # orderer = ~order(HR),
+
+                labels_displayed = c("factor", "n"),#"endpoint",
+
+                ggtheme = ggplot2::theme_bw(base_size = 10),
+
+                #values_displayed = c("HR","CI","p"),
+
+                HR_x_limits = c(0.01,16),
+
+                HR_x_breaks = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,1,2,4,6,8,10,14,16)
+
+                #p_lessthan_cutoff = 0.05
+
+                )
+
+}else{
+
+map(features, function(by){analyse_multivariate(dataDF,
+
+                       c(surv_time,surv_status),
+
+                       covariates = list(by), # covariates expects a list
+
+                       covariate_name_dict = NULL,
+
+                       covariate_label_dict = NULL)
+
+}) %>%
+
+  forest_plot(
+
+              #factor_labeller = covariate_names,
+
+              endpoint_labeller = c(time=surv_time_label),
+
+              # orderer = ~order(HR),
+
+              labels_displayed = c("factor", "n"),#"endpoint",
+
+              ggtheme = ggplot2::theme_bw(base_size = 10),
+
+              #values_displayed = c("HR","CI","p"),
+
+              HR_x_limits = c(0.01,16),
+
+              HR_x_breaks = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,1,2,4,6,8,10,14,16)
+
+              #p_lessthan_cutoff = 0.05
+
+              )
+
+}
+
+ 
+
+ 
+
+ 
+
+ 
+
+```
+
+ 
+
+ 
+
+ 
+
+## Models results
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8, eval=TRUE}
+
+# var.names = list(list(gender ~ "Gender"),
+
+#                      list(Age..old.young. ~ "Age group at Dx"),
+
+#                      list(Performance.Status ~ "Performance Status"),
+
+#                      list(LDH..high.low. ~ "LDH level"),
+
+#                      list(braf_mutationsstatus ~ "BRAF status"),
+
+#                      list(M_stage ~ "Disease stage"),
+
+#                      list(Treatment.type ~ "Immunotherapy"),
+
+#                      list(Treatment.duration.monthsMonths ~ "Treatment duration in months ± SD"),
+
+#                      list(X1st.line..yes.no. ~ "First line treatment"),
+
+#                      list(PET.positive.lesions.Yes.No ~ "FDG-PET positive lesions at treatment discontinuation")
+
+#                      )
+
+ 
+
+# map(vars(gender, `Age (old/young)`, `Performance Status`,`LDH (high/low)`,braf_mutationsstatus,
+
+#          M_stage,`Treatment type`,`Treatment duration monthsMonths`,`1st line (yes/no)`,`PET positive lesions Yes/No`), function(by)
+
+# {
+
+#   analyse_multivariate(dataDF.final,
+
+#                        vars(`OS (days)`, `Alive (0) or Dead (1)`),
+
+#                        covariates = list(by), # covariates expects a list
+
+#                        covariate_name_dict = covariate_names,
+
+#                        covariate_label_dict = covariate_labels)
+
+# }) -> results.uni
+
+#
+
+ 
+
+if(exists("covariate_labels")){
+
+    map(features, function(by){
+
+    analyse_multivariate(dataDF,
+
+                         c(surv_time,surv_status),
+
+                         covariates = list(by), # covariates expects a list
+
+                         covariate_name_dict = covariate_names,
+
+                         covariate_label_dict = covariate_labels)
+
+  }) -> results.uni
+
+}else{
+
+map(features, function(by){analyse_multivariate(dataDF,
+
+                       c(surv_time,surv_status),
+
+                       covariates = list(by), # covariates expects a list
+
+                       covariate_name_dict = NULL,
+
+                       covariate_label_dict = NULL)
+
+}) -> results.uni
+
+}
+
+ 
+
+ 
+
+ 
+
+# Extract results (coxph models) for all univariate analyses
+
+results.uni.coxph <-lapply(results.uni, function(x) x[["coxph"]])
+
+ 
+
+# gtables.uni.coxph <-lapply(results.uni.coxph, function(x) tbl_regression(x,exponentiate = TRUE,
+
+#                                              pvalue_fun = ~style_pvalue(.x, digits = 3),
+
+#                                              label=var.names[[x]]))
+
+ 
+
+gtables.uni.coxph <-lapply(1:length(results.uni.coxph), function(x) tbl_regression(results.uni.coxph[[x]],exponentiate = TRUE,
+
+                                             pvalue_fun = fmt_pvalue_with_stars
+
+                                             #,label=var.names[[x]]
+
+                                             )%>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001"))
+
+# table.uni.res <- result$coxph %>% tbl_regression(exponentiate = TRUE)
+
+ 
+
+ 
+
+ 
+
+ 
+
+```
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+tbl_stack(gtables.uni.coxph) %>% as_flex_table()
+
+tbl_stack(gtables.uni.coxph) %>% as_flex_table() %>%
+
+  flextable::save_as_docx(path = paste0(reportsPath,"/","univariate_analysis_withMISSING.docx"))
+
+```
+
+ 
+
+ 
+
+## KM plots: all categorical variables
+
+ 
+
+ 
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=20, fig.height=12}
+
+ 
+
+default_args <- list(break.time.by="breakByMonth",
+
+                     xlab=xlabel,
+
+                     legend.title="jhgf",
+
+                     hazard.ratio=TRUE,
+
+                     risk.table=TRUE,
+
+                     table.layout="clean",
+
+                     ggtheme=ggplot2::theme_bw(10),
+
+                     palette =c("black","grey","green"))
+
+ 
+
+create_KMobject <- function(DF,covariate,survVector){
+
+  res <- DF %>%
+
+  analyse_survival(survVector, by={{covariate}})
+
+  res
+
+}
+
+ 
+
+r <-lapply(categ_feats, function(x) create_KMobject(dataDF,{{x}},c(surv_time,surv_status)))
+
+ 
+
+## MAKE KM PLOTS
+
+r %>% kaplan_meier_grid(nrow=length(categ_feats)/2,
+
+                    default_args,
+
+                    # break.time.by="breakByQuarterYear",
+
+                    mapped_plot_args=list(
+
+                      legend.title=categ_feats,
+
+                      title=LETTERS[1:length(categ_feats)]
+
+                    )) %>%
+
+  print
+
+```
+
+ 
+
+ 
+
+# Multiple Univariate Analyses - COMPLETE DATA (no missing) {.tabset .tabset-fade .tabset-pills}
+
+Perform Cox regression on right-censored data
+
+ 
+
+The chunk below is set to eval=TRUE only if we want to define special covariate/feature names for the analyses, and the visualizations.
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8, eval=FALSE}
+
+##
+
+ 
+
+ 
+
+covariate_names <- c(Season="Gender",
+
+                     `Season:F`="Female",
+
+                     `gender:M`="Male",
+
+                     #  `Age (old/young)`="Age",
+
+                     # `Age (old/young):old`="Age ≥ median value",
+
+                     # `Age (old/young):young`="Age < median value",
+
+                     # `Performance Status`="Performance Status",
+
+                     # `Performance Status:PS0`="Performance Status 0",
+
+                     # `Performance Status:PS1 - PS2`="Performance Status > 0",
+
+                     `LDH (high/low)` = "LDH level",
+
+                     `LDH (high/low):high` = "LDH level ≥ ULN",
+
+                     `LDH (high/low):low` = "LDH level ≤ ULN",
+
+                      braf_mutationsstatus = "BRAF status",
+
+                     `braf_mutationsstatus:Wild-type` = "BRAF wild-type",
+
+                     `braf_mutationsstatus:Mutated` = "BRAF mutated",
+
+                     M_stage = "Disease Stage",
+
+                     `M_stage:M1a-M1b` = "AJCC stage M1a/M1b",
+
+                    `M_stage:M1c-M1d` = "AJCC stage M1c/M1d Stage",
+
+                     `Treatment type` = "Immunotherapy",
+
+                     `Treatment type:Anti-PD-1` = "Anti-PD-1",
+
+                     `Treatment type:Anti-PD-1 + experimental` = "Anti-PD-1 + experimental",
+
+                      `Treatment type:Ipilimumab + Nivolumab` = "Ipilimumab + nivolumab",
+
+                     `Treatment duration monthsMonths` = "Treatment duration in months ± SD",
+
+                     `1st line (yes/no)` = "First line treatment",
+
+                    `1st line (yes/no):Yes` = "1st line treatment",
+
+                    `1st line (yes/no):No` = "Not first line treatment",
+
+                     `PET positive lesions Yes/No` = "FDG-PET positive lesions at treatment discontinuation",
+
+                    `PET positive lesions Yes/No:Yes` = "Presence of FDG avid lesions at treatment discontinuation",
+
+                    `PET positive lesions Yes/No:No` = "Absence of FDG avid lesions at treatment discontinuationn")
+
+ 
+
+ 
+
+covariate_labels <-c(gender="Gender",
+
+                     `gender:F`="Female",
+
+                     `gender:M`="Male",
+
+                      `Age (old/young)`="Age",
+
+                     `Age (old/young):old`="Age ≥ median value",
+
+                     `Age (old/young):young`="Age < median value",
+
+                     `Performance Status`="Performance Status",
+
+                     `Performance Status:PS0`="Performance Status 0",
+
+                     `Performance Status:PS1 - PS2`="Performance Status > 0",
+
+                     `LDH (high/low)` = "LDH level",
+
+                     `LDH (high/low):high` = "LDH level ≥ ULN",
+
+                     `LDH (high/low):low` = "LDH level ≤ ULN",
+
+                      braf_mutationsstatus = "BRAF status",
+
+                     `braf_mutationsstatus:Wild-type` = "BRAF wild-type",
+
+                     `braf_mutationsstatus:Mutated` = "BRAF mutated",
+
+                     M_stage = "Disease Stage",
+
+                     `M_stage:M1a-M1b` = "AJCC stage M1a/M1b",
+
+                    `M_stage:M1c-M1d` = "AJCC stage M1c/M1d Stage",
+
+                     `Treatment type` = "Immunotherapy",
+
+                     `Treatment type:Anti-PD-1` = "Anti-PD-1",
+
+                     `Treatment type:Anti-PD-1 + experimental` = "Anti-PD-1 + experimental",
+
+                      `Treatment type:Ipilimumab + Nivolumab` = "Ipilimumab + nivolumab",
+
+                     `Treatment duration monthsMonths` = "Treatment duration in months ± SD",
+
+                     `1st line (yes/no)` = "First line treatment",
+
+                    `1st line (yes/no):Yes` = "1st line treatment",
+
+                    `1st line (yes/no):No` = "Not first line treatment",
+
+                     `PET positive lesions Yes/No` = "FDG-PET positive lesions at treatment discontinuation",
+
+                    `PET positive lesions Yes/No:Yes` = "Presence of FDG avid lesions at treatment discontinuation",
+
+                    `PET positive lesions Yes/No:No` = "Absence of FDG avid lesions at treatment discontinuationn")
+
+########################
+
+```
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8, eval=TRUE}
+
+if(exists("covariate_labels")){
+
+    map(features, function(by){
+
+    analyse_multivariate(dataDF.final,
+
+                         c(surv_time,surv_status),
+
+                         covariates = list(by), # covariates expects a list
+
+                         covariate_name_dict = covariate_names,
+
+                         covariate_label_dict = covariate_labels)
+
+  }) %>%
+
+    forest_plot(
+
+                factor_labeller = covariate_names,
+
+                endpoint_labeller = c(time=surv_time_label),
+
+                # orderer = ~order(HR),
+
+                labels_displayed = c("factor", "n"),#"endpoint",
+
+                ggtheme = ggplot2::theme_bw(base_size = 10),
+
+               #values_displayed = c("HR","CI","p"),
+
+                HR_x_limits = c(0.01,16),
+
+                HR_x_breaks = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,1,2,4,6,8,10,14,16)
+
+                #p_lessthan_cutoff = 0.05
+
+                )
+
+}else{
+
+map(features, function(by){analyse_multivariate(dataDF.final,
+
+                       c(surv_time,surv_status),
+
+                       covariates = list(by), # covariates expects a list
+
+                       covariate_name_dict = NULL,
+
+                       covariate_label_dict = NULL)
+
+}) %>%
+
+  forest_plot(
+
+              #factor_labeller = covariate_names,
+
+              endpoint_labeller = c(time=surv_time_label),
+
+              # orderer = ~order(HR),
+
+              labels_displayed = c("factor", "n"),#"endpoint",
+
+              ggtheme = ggplot2::theme_bw(base_size = 10),
+
+              #values_displayed = c("HR","CI","p"),
+
+              HR_x_limits = c(0.01,16),
+
+              HR_x_breaks = c(0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,1,2,4,6,8,10,14,16)
+
+              #p_lessthan_cutoff = 0.05
+
+              )
+
+}
+
+ 
+
+ 
+
+ 
+
+ 
+
+```
+
+ 
+
+ 
+
+ 
+
+## Models results
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+# var.names = list(list(gender ~ "Gender"),
+
+#                      list(Age..old.young. ~ "Age group at Dx"),
+
+#                      list(Performance.Status ~ "Performance Status"),
+
+#                      list(LDH..high.low. ~ "LDH level"),
+
+#                      list(braf_mutationsstatus ~ "BRAF status"),
+
+#                      list(M_stage ~ "Disease stage"),
+
+#                      list(Treatment.type ~ "Immunotherapy"),
+
+#                      list(Treatment.duration.monthsMonths ~ "Treatment duration in months ± SD"),
+
+#                      list(X1st.line..yes.no. ~ "First line treatment"),
+
+#                      list(PET.positive.lesions.Yes.No ~ "FDG-PET positive lesions at treatment discontinuation")
+
+#                      )
+
+ 
+
+# map(vars(gender, `Age (old/young)`, `Performance Status`,`LDH (high/low)`,braf_mutationsstatus,
+
+#          M_stage,`Treatment type`,`Treatment duration monthsMonths`,`1st line (yes/no)`,`PET positive lesions Yes/No`), function(by)
+
+# {
+
+#   analyse_multivariate(dataDF.final,
+
+#                        vars(`OS (days)`, `Alive (0) or Dead (1)`),
+
+#                        covariates = list(by), # covariates expects a list
+
+#                        covariate_name_dict = covariate_names,
+
+#                        covariate_label_dict = covariate_labels)
+
+# }) -> results.uni
+
+#
+
+ 
+
+if(exists("covariate_labels")){
+
+    map(features, function(by){
+
+    analyse_multivariate(dataDF.final,
+
+                         c(surv_time,surv_status),
+
+                         covariates = list(by), # covariates expects a list
+
+                         covariate_name_dict = covariate_names,
+
+                         covariate_label_dict = covariate_labels)
+
+  }) -> results.uni
+
+}else{
+
+map(features, function(by){analyse_multivariate(dataDF.final,
+
+                       c(surv_time,surv_status),
+
+                       covariates = list(by), # covariates expects a list
+
+                       covariate_name_dict = NULL,
+
+                       covariate_label_dict = NULL)
+
+}) -> results.uni
+
+}
+
+ 
+
+ 
+
+ 
+
+# Extract results (coxph models) for all univariate analyses
+
+results.uni.coxph <-lapply(results.uni, function(x) x[["coxph"]])
+
+ 
+
+# gtables.uni.coxph <-lapply(results.uni.coxph, function(x) tbl_regression(x,exponentiate = TRUE,
+
+#                                              pvalue_fun = ~style_pvalue(.x, digits = 3),
+
+#                                              label=var.names[[x]]))
+
+ 
+
+gtables.uni.coxph <-lapply(1:length(results.uni.coxph), function(x) tbl_regression(results.uni.coxph[[x]],exponentiate = TRUE,
+
+                                             pvalue_fun = fmt_pvalue_with_stars
+
+                                             #,label=var.names[[x]]
+
+                                             )%>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001"))
+
+# table.uni.res <- result$coxph %>% tbl_regression(exponentiate = TRUE)
+
+ 
+
+ 
+
+ 
+
+ 
+
+```
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+tbl_stack(gtables.uni.coxph) %>% as_flex_table()
+
+tbl_stack(gtables.uni.coxph) %>% as_flex_table() %>%
+
+  flextable::save_as_docx(path = paste0(reportsPath,"/","univariate_analysis.docx"))
+
+```
+
+ 
+
+ 
+
+## KM plots: all categorical variables
+
+ 
+
+ 
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=20, fig.height=12}
+
+ 
+
+default_args <- list(break.time.by="breakByMonth",
+
+                     xlab=xlabel,
+
+                     legend.title="jhgf",
+
+                     hazard.ratio=TRUE,
+
+                     risk.table=TRUE,
+
+                     table.layout="clean",
+
+                     ggtheme=ggplot2::theme_bw(10),
+
+                     palette =c("black","grey","green"))
+
+ 
+
+create_KMobject <- function(DF,covariate,survVector){
+
+  res <- DF %>%
+
+  analyse_survival(survVector, by={{covariate}})
+
+  res
+
+}
+
+ 
+
+r <-lapply(categ_feats, function(x) create_KMobject(dataDF.final,{{x}},c(surv_time,surv_status)))
+
+ 
+
+## MAKE KM PLOTS
+
+r %>% kaplan_meier_grid(nrow=length(categ_feats)/2,
+
+                    default_args,
+
+                    # break.time.by="breakByQuarterYear",
+
+                    mapped_plot_args=list(
+
+                      legend.title=categ_feats,
+
+                      title=LETTERS[1:length(categ_feats)]
+
+                    )) %>%
+
+  print
+
+```
+
+ 
+
+ 
+
+# Multivariate Survival Analysis {.tabset .tabset-fade .tabset-pills}
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+if(exists("covariate_labels")){
+
+    dataDF.final %>%
+
+    analyse_multivariate(c(surv_time,surv_status),
+
+                       covariates = features,
+
+                       covariate_name_dict = covariate_names,
+
+                        covariate_label_dict = covariate_names) ->
+
+  result
+
+ 
+
+}else{
+
+dataDF.final %>%
+
+    analyse_multivariate(c(surv_time,surv_status),
+
+                       covariates = features,
+
+                       covariate_name_dict = NULL,
+
+                        covariate_label_dict = NULL) ->
+
+  result
+
+ 
+
+}
+
+ 
+
+ 
+
+# print(result$summary)
+
+ 
+
+table.res <- result$coxph %>% tbl_regression(exponentiate = TRUE,
+
+                                             pvalue_fun = fmt_pvalue_with_stars,#~style_pvalue(.x, digits = 3)
+
+                     #                         label=list(gender ~ "Gender",
+
+                     # Age..old.young. ~ "Age group at Dx",
+
+                     # Performance.Status ~ "Performance Status",
+
+                     # LDH..high.low. ~ "LDH level",
+
+                     # braf_mutationsstatus ~ "BRAF status",
+
+                     # M_stage ~ "Disease stage",
+
+                     # Treatment.type ~ "Immunotherapy",
+
+                     # Treatment.duration.monthsMonths ~ "Treatment duration in months ± SD",
+
+                     # X1st.line..yes.no. ~ "First line treatment",
+
+                     # PET.positive.lesions.Yes.No ~ "FDG-PET positive lesions at treatment discontinuation")
+
+                     ) %>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001")
+
+ 
+
+```
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=18, fig.height=8}
+
+if(exists("covariate_labels")){
+
+    forest_plot(result,
+
+            factor_labeller = covariate_names,
+
+              endpoint_labeller = c(time=surv_time_label),
+
+              # orderer = ~order(HR),
+
+              labels_displayed = c("factor", "n"),#"endpoint",
+
+              ggtheme = ggplot2::theme_bw(base_size = 10),
+
+            relative_widths = c(1, 1.5, 1),
+
+            HR_x_breaks = c(0.25, 0.5, 0.75, 1, 1.5, 2,4,6,8))
+
+ 
+
+}else{
+
+forest_plot(result,
+
+            # factor_labeller = NULL,
+
+              endpoint_labeller = c(time=surv_time_label),
+
+              # orderer = ~order(HR),
+
+              labels_displayed = c("factor", "n"),#"endpoint",
+
+              ggtheme = ggplot2::theme_bw(base_size = 10),
+
+            relative_widths = c(1, 1.5, 1),
+
+            HR_x_breaks = c(0.25, 0.5, 0.75, 1, 1.5, 2,4,6,8))
+
+ 
+
+}
+
+ 
+
+ 
+
+ 
+
+```
+
+ 
+
+ 
+
+## Model results
+
+ 
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+table.res %>% as_flex_table()
+
+table.res %>% as_flex_table() %>%
+
+  flextable::save_as_docx(path = paste0(reportsPath,"/","multivariate_analysis.docx"))
+
+```
+
+ 
+
+# Missing data {.tabset .tabset-fade .tabset-pills}
+
+ 
+
+By having missing data we end up losing information and hence precision (thus wider confidence intervals). In some of the variables there might be underrepresentation of a category that may lead to biased estimates. Whether an observation is
+
+missing depends on the very information we are missing.
+
+ 
+
+Missing information can be divided into these three categories:
+
+ 
+
+1. **MCAR Missing completely at random**: Whether an
+
+observation is missing does not depend on observed,
+
+nor unobserved, variables. (Dice roll)
+
+ 
+
+2. **MAR Missing at random**: Whether an observation is
+
+missing does not depend on unobserved variables, but
+
+does depend on observed ones. (Separate dice rolls for
+
+groups corresponding to other variables)
+
+ 
+
+3. **MNAR Missing not at random**: Whether an observation is
+
+missing depends on unobserved variables (and possibly
+
+also observed ones). (Separate dice rolls for groups
+
+corresponding to variables that have missing
+
+information)
+
+ 
+
+We can explore theoretical scenarios on why the data are missing. But wWould it had been possible to detect this by looking at the data alone (i.e. not knowing why the data went missing)?
+
+ 
+
+We can try to distinguish between MCAR/MAR/MNAR with data and statistics.
+
+ 
+
+**Strategy 1: Try to rule out MCAR**
+
+ 
+
+***
+
+***
+
+ 
+
+If you can find a variable - or combination of variables - that gives
+
+you information about whether the variable with missing values is more or less likely to be
+
+missing, the mechanism is not MCAR.
+
+ 
+
+Note: Statistical testing doesn’t always produce the correct
+
+answer - sometimes, we find false positives.
+
+ 
+
+ 
+
+**Strategy 2: NA**
+
+ 
+
+***
+
+***
+
+ 
+
+Nothing more can be done using data and statistics alone.
+
+ 
+
+**Conclusion**: The only "test" you can perform is to falsify a
+
+MCAR assumption. Distinguishing between MAR and MNAR
+
+must be based on discussion, sensitivity analyses and external
+
+knowledge
+
+ 
+
+## Compare distributions for complete cases and missing info cases {.tabset .tabset-fade .tabset-pills}
+
+ 
+
+Add a new variable to the dataset that indicates whether each observation is complete or not:
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+dataDF$completecase <-"Non-complete"
+
+dataDF$completecase[complete.cases(dataDF)] <-"Complete"
+
+```
+
+ 
+
+Make distribution plots for each variable, stratified by completecase
+
+ 
+
+### Barplots
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+ 
+
+ 
+
+### Make distribution plots for each variable, stratified by completecase
+
+## Barplots for categorical
+
+## Histograms for numerical
+
+ 
+
+ 
+
+## Barplots
+
+ 
+
+barPlots <- sapply(categ_feats, function(x) barplot_nominal(dataDF[, c(categ_feats,"completecase")],x,45,"completecase"),simplify = FALSE)
+
+ 
+
+```
+
+ 
+
+### Histograms
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+ 
+
+# Histograms
+
+ 
+
+##########################
+
+## Histogram with facet ##
+
+##########################
+
+ 
+
+histPlots<-sapply(numeric_feats, function(x) hist_measurement(dataDF[, c(numeric_feats,"completecase")],x,"completecase", plotCols=2),simplify = FALSE)
+
+ 
+
+```
+
+ 
+
+## Inspect patterns of missing information {.tabset .tabset-fade .tabset-pills}
+
+ 
+
+### Plot the number of missings for all data
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+#Missing information visualization using the naniar package:
+
+ 
+
+ 
+
+gg_miss_var(dataDF)
+
+```
+
+ 
+
+### Plot the number of missings for each variable {.tabset .tabset-fade .tabset-pills}
+
+ 
+
+```{r,warning=F, message=F,echo=TRUE, eval=TRUE,results='asis', fig.width=15, fig.height=8, echo=FALSE}
+
+ 
+
+res <-sapply(features, function(x) expr(gg_miss_var(dataDF, facet = !! rlang::sym(x), show_pct = TRUE)) %>% eval(), simplify = FALSE)
+
+# x=as.name("Season")
+
+# y <-rlang::sym("Season")
+
+# gg_miss_var(dataDF, facet = x, show_pct = TRUE)
+
+# gg_miss_var(dataDF, facet = y, show_pct = TRUE)
+
+# expr(gg_miss_var(dataDF, facet = !! rlang::sym("Season"), show_pct = TRUE))
+
+ 
+
+printMisPlot <- function(listElem,listElemName){
+
+cat('\n')
+
+  cat('\n')
+
+  cat("#### ", listElemName, "\n")
+
+  cat('\n')
+
+  
+
+  print(listElem)
+
+}
+
+ 
+
+ 
+
+sapply(1:length(res), function(x) printMisPlot(res[[x]],names(res)[x]))
+
+```
+
+ 
+
+### Missingness display
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+ 
+
+vis_miss(dataDF)
+
+```
+
+ 
+
+### Upset plot the pattern of missingness
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8, eval=FALSE}
+
+ 
+
+gg_miss_upset(dataDF)
+
+```
+
+ 
+
+### Plot of number of missings per case (row)
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+gg_miss_case(dataDF)
+
+```
+
+ 
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8,echo=FALSE}
+
+ 
+
+#Missing information visualization using the mice package:
+
+ 
+
+mispatt <-md.pattern(dataDF, rotate.names = TRUE)
+
+ 
+
+```
+
+ 
+
+ 
+
+ 
+
+# Patient Characteristics -groups comparisons {.tabset .tabset-fade .tabset-pills}
+
+ 
+
+Tables produced are saved automatically in the **Reports** folder, as word files.
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8, eval=TRUE}
+
+dataDF <- dataDF %>% select(-completecase) %>% select(all_of(features))
+
+# dataDF$Season <-dataDF$Season %>% forcats::fct_explicit_na()
+
+# dataDF$BRAF_status <-dataDF$BRAF_status %>% forcats::fct_explicit_na()
+
+ 
+
+braf_correct.table <- dataDF %>% as_tibble() %>% # forcats::fct_explicit_na(dataDF$Season) %>%
+
+            tbl_summary(by = `braf_correct`,missing = "ifany",missing_text = "Missing") %>%
+
+            add_p(pvalue_fun = fmt_pvalue_with_stars, test=list(all_continuous() ~ "t.test", all_categorical() ~ "fisher.test"))%>%
+
+            add_overall()
+
+ 
+
+regime_correct.table <- dataDF %>% as_tibble() %>% # forcats::fct_explicit_na(dataDF$Season) %>%
+
+            tbl_summary(by = `regime_correct`,missing = "ifany",missing_text = "Missing") %>%
+
+            add_p(pvalue_fun = fmt_pvalue_with_stars, test=list(all_continuous() ~ "t.test", all_categorical() ~ "fisher.test"))%>%
+
+            add_overall()
+
+ 
+
+# s <-dataDF %>% group_by("Season")
+
+#
+
+# s2 <- s %>% select(Season,BRAF_status)
+
+# table(s2$Season,s2$BRAF_status)
+
+# prop.table(table(s2$Season,s2$BRAF_status))
+
+# fisher.test(table(s2$Season,s2$BRAF_status))
+
+```
+
+ 
+
+## BRAF status
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8, eval=TRUE}
+
+braf_correct.table %>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001") %>%
+
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Group**") %>% as_flex_table()
+
+ 
+
+braf_correct.table %>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001") %>%
+
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Group**")%>% as_flex_table() %>%
+
+  flextable::save_as_docx(path = paste0(reportsPath,"/","bortext_groups.docx"))
+
+ 
+
+sect_properties <- prop_section(
+
+  page_size = page_size(orient = "landscape",
+
+    width = 8.3, height = 13.7),
+
+  type = "continuous",
+
+  page_margins = page_mar()
+
+)
+
+ 
+
+braf_correct.table %>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001") %>% as_flex_table() %>%
+
+  flextable::save_as_docx(path = paste0(reportsPath,"/","bortext_groups.docx"),pr_section = sect_properties)
+
+```
+
+ 
+
+## Treatment status
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8, eval=TRUE}
+
+regime_correct.table %>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001") %>%
+
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Group**") %>% as_flex_table()
+
+ 
+
+regime_correct.table %>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001") %>%
+
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Group**")%>% as_flex_table() %>%
+
+  flextable::save_as_docx(path = paste0(reportsPath,"/","regime_correct_groups.docx"))
+
+ 
+
+regime_correct.table %>%
+
+  modify_footnote(p.value ~ "*p<0.05; **p<0.01; ***p<0.001") %>% as_flex_table() %>%
+
+ flextable::save_as_docx(path = paste0(reportsPath,"/","regime_correct_groups.docx"),pr_section = sect_properties)
+
+```
+
+ 
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+```
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+```
+
+ 
+
+```{r,warning=F, message=F,fig.show = 'hold', fig.width=15, fig.height=8}
+
+```
+
+ 
+
+# Conclusions
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+ 
+
+ 
+
+```
+
+ 
+
+# Session info
+
+ 
+
+```{r,warning=F, message=F,eval=TRUE}
+
+sessionInfo()
+
+ 
+
+```
