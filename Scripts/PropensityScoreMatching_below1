@@ -1,3 +1,4 @@
+###################################### This R script was used to clean patient cohort and then perform Propencity based matching ##############################################
 #Clean workspace
 rm(list = ls(envir = .GlobalEnv), envir = .GlobalEnv)
 
@@ -113,38 +114,5 @@ coefficients(model)
 # Fit Cox proportional hazards regression model to matched data
 matched_data <- match.data(psm_data)
 
-# Compute the Kaplan-Meier model on Match data
-fit_match = survfit(Surv(matched_data$OS_days, matched_data$Dead_mel) ~ treatment_correct, data=matched_data)
-print(fit_match)
-
-ggsurvplot(fit_match,
-           data=matched_data,
-           xlab="Days",
-           ylab="Matched data survival probability",
-           pval = TRUE, conf.int = TRUE,
-           risk.table = TRUE, # Add risk table
-           risk.table.col = "strata", # Change risk table color by groups
-           linetype = "strata", # Change line type by groups
-           #surv.median.line = "hv", # Specify median survival
-           ggtheme = theme_bw(), # Change ggplot2 theme
-           palette = c("#E7B800", "#2E9FDF"))
-
-# Log-Rank test comparing survival curves: survdiff()
-surv_diff_matched <- survdiff(Surv(matched_data$OS_days, matched_data$Dead_mel) ~ treatment_correct, data=matched_data)
-surv_diff_matched
-
-# Fit Cox regression model to matched dataset
-cox_model <- coxph(Surv(OS_days, Dead_mel) ~ treatment_correct + gender + braf_correct + adjuvant_correct + metastase_hjerne +
-                     LDH +  PS + stage, data = matched_data)
-
-# Print summary of the Cox regression model
-summary(cox_model)
-
-# Create a forest plot
-ggforest(cox_model)
-
-# Plot the baseline survival function
-ggsurvplot(survfit(cox_model), 
-           data=matched_data,
-           palette= '#2E9FDF',
-           ggtheme = theme_minimal())
+# Save matched data for futher analysis.
+save(matched_data, file = "matched_data_PD_1_ipinivo_stage_below1.Rdata")
