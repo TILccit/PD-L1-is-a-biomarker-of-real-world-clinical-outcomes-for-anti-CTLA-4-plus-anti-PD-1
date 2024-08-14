@@ -1,114 +1,57 @@
 ##### This script was used to perform Survival Analysis On Propensity Score based Matched Data for PD-L1 below1 and create HTML reports #####
 
 ---
-
 title: "Response and outcomes in melanoma"
-
 subtitle: <center> Survival uni- and multivariate analysis</center>
-
 author: "Aimilia Schina/Marco Donia"
-
 date: '`r paste("First created on January 2022. Updated on ", format(Sys.Date(), "%d %B %Y"))`'
 
 output:
-
   html_document:
-
     css: style.css
-
     code_folding: hide
-
     #smooth_scroll: yes
-
     fig_caption: yes
-
     #highlight: textmate
-
     #theme: cerulean
-
     #theme: simplex
-
     toc: yes
-
     toc_float:
-
       collapsed: true
-
       smooth_scroll: true
-
     toc_depth: 5
-
     number_sections: true
-
     #df_print: paged
-
- 
-
 ---
-
- 
-
- 
 
 ```{r message=FALSE}
 
 RNGkind(sample.kind = "Rounding")# It has to do with change in set.seet() though now I am not using set seed for mocca, still results are different if I do not set that.
-
 ## Clear R-workspace
-
 rm(list=ls(all=TRUE))
-
 # ## Set location of R-script as working directory
-
 # path.act <- dirname(sys.frame(1)$ofile)
-
 # setwd(path.act)
-
 ## Close all graphic devices
-
 graphics.off()
 
 #####################
-
 ### Load packages ###
-
 #####################
-
 library(pacman)
-
 pacman::p_load(extrafont,DT,stringr,dplyr,plyr,tibble,tidyverse,strex,data.table,ggstatsplot,hrbrthemes,ggstatsplot,reshape,pander,data.table,ggrepel,scales,survival,survminer,dataMaid,gridExtra,tidytidbits,survivalAnalysis,gtsummary, Cairo,Amelia,officer,mice,naniar)
-
- 
-
 extrafont::loadfonts(device="win")
-
 windowsFonts(sans="Palatino Linotype")
-
 loadfonts(device="win")
-
 loadfonts(device="postscript")
 
- 
-
- 
-
 # library(tidyverse)
-
 # library(tidytidbits)
-
 # library(survivalAnalysis)
-
 ```
-
- 
-
 ```{r,warning=F, message=F}
 
- 
-
 ```
-
- 
 
 ```{r,warning=F, message=F}
 
@@ -119,132 +62,64 @@ loadfonts(device="postscript")
 ###########################
 
 projectVersionDirName <- "R analyses/"
-
- 
-
 # Main analysis paths
-
-projectPath <- paste0("L:/LovbeskyttetMapper/MMM database/Acquired resistance/Files_csv/")
-
-projectScriptPath <- "L:/LovbeskyttetMapper/MMM database/Acquired resistance/"
-
+projectPath <- paste0("Files_csv/")
+projectScriptPath <- "MMM database"
 scriptDataPath <- paste0(projectScriptPath,projectVersionDirName)
-
 projectDataPath <- paste0(scriptDataPath, "Data/")
-
 projectRDataPath <- paste0(scriptDataPath, "RData/")
 
 figuresPath <- paste0(scriptDataPath,"/Figures")
 
 reportsPath <- paste0(scriptDataPath,"/Reports")                                                                                                    
-
- 
-
 ######################
-
 ## Tools Data paths ##
-
 ######################
 
- 
-
 ##########################
-
 ### FOLDER/FILES NAMES ###
-
 ##########################
-
- 
-
 ############################
-
 ## Project Data Filenames ##
-
 ############################
-
- 
-
- 
-
 ##################################
 
 ### LOAD SOURCE FUNCTIONS FILE ###
 
 ##################################
-
 source(paste0(projectScriptPath,projectVersionDirName,"/","1.0.0_Seasonal_aPD1_Survival_functions.v1.R"))
-
- 
-
 #####################
 
 ### File suffixes ###
 
 #####################
-
 version <- "1.0"
-
 Rdata.suffix <- ".RData"
-
- 
-
- 
-
 ######################
 
 ### Plot variables ###
 
 ######################
 
- 
-
- 
-
 ```
-
- 
-
 # Data
-
- 
-
 ## Loading patient data
-
- 
-
 ```{r dataLoad,warning=F, message=F,eval=TRUE}
 
 # Loading CSV file with patient info
-
- 
-
 dataDF <- read.csv(file=paste0("L:/LovbeskyttetMapper/MMM database/Acquired resistance/Files_csv/", "csv_ipinivo_pd1_partial_prop0.05.csv"), header = TRUE,check.names = FALSE,sep = ";",dec = ",",stringsAsFactors = FALSE)
-
 # head(dataDF)
-
 # colnames(dataDF)
-
- 
-
 # Correct First column name
 
 colnames(dataDF)[1] <- "patient_id"
-
- 
 
 # Filter to include only rows where bortext is "Partial" or "Complete"
 
 dataDF <- dataDF[dataDF$bortext == "Partial", ]
 
- 
-
 ```
-
- 
-
 ## Pre-processing of data
-
- 
 
 * Check that all columns have no spaces etc, especially character columns,
 
@@ -254,11 +129,7 @@ dataDF <- dataDF[dataDF$bortext == "Partial", ]
 
 * Check numerical columns.
 
- 
-
 We first need to define which columns we want as character (categorical), and which need to be numerical. Sometimes things get messed up with excel files.
-
- 
 
 ```{r,warning=F, message=F,eval=TRUE}
 
@@ -269,8 +140,6 @@ We first need to define which columns we want as character (categorical), and wh
 features <- c("gender", "age_1st_treat","regime_correct","braf_correct","received_adjuvant_therapy","Line_correct",
 
               "Brain_metastases","LDH","PS", "stage_2")
-
- 
 
 ## Define which columns include survival data
 
@@ -294,15 +163,11 @@ surv_time_label <- "OS"
 
 xlabel=".OS.days"
 
- 
-
 ## DEFINE WHICH COLUMNS ARE CATEGORICAL
 
 categ_feats <-c("gender","regime_correct","braf_correct","received_adjuvant_therapy","Line_correct",
 
               "Brain_metastases","LDH","PS","stage_2")
-
- 
 
 ## DEFINE WHICH COLUMNS ARE NUMERICAL
 
@@ -310,11 +175,7 @@ categ_feats <-c("gender","regime_correct","braf_correct","received_adjuvant_ther
 
 numeric_feats <-c("MSS_days", "Dead_mel","PFS_days","Progressed","age_1st_treat")
 
- 
-
 # Remove spaces from column names and features.
-
- 
 
 colnames(dataDF) <- gsub(" ","_",colnames(dataDF))
 
@@ -338,11 +199,7 @@ surv_status <- gsub(" ","_",surv_status)
 
 ```
 
- 
-
 ```{r,warning=F, message=F,eval=TRUE}
-
- 
 
 ## FIRST MAKE SURE THERE ARE NO BLANKS ANYWHERE IN THE DATA
 
@@ -351,8 +208,6 @@ surv_status <- gsub(" ","_",surv_status)
 num_cols <- unlist(lapply(dataDF, is.numeric))         # Identify numeric columns
 
 dataDF <- cbind(apply(dataDF[,!num_cols], 2, str_remove_all, " "),dataDF[,num_cols])   # Remove blanks
-
- 
 
 ### NOW MAKE SURE THAT THE COLUMNS ARE IN THE CORRECT FORMAT NEEDED FOR ANALYSIS.
 
@@ -369,46 +224,25 @@ dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.character))
 dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.factor))
 
 ```
-
- 
-
 Now that we have transformed the columns we want, we filter the dataframe for the specific columns we selected
-
- 
 
 ```{r,warning=F, message=F,eval=TRUE}
 
 dataDF <- dataDF %>% select(all_of(c(OS_time,OS_status,PFS_time,PFS_status, features))) %>% distinct()
 
- 
-
 ## LET's LOOK AT A SUMMARY OF THE DATA
-
- 
 
 summary(dataDF)
 
 ```
 
- 
-
- 
-
- 
-
 We see that instead of NA, there is an annotation of Notavailable in some of the patient. We need to transform that to NA values and then remove those patients from the table, to have clean data.
 
- 
-
 ```{r,warning=F, message=F,eval=TRUE}
-
- 
 
 # to correct for this first make factors to characters
 
 dataDF <- dataDF %>% mutate(across(all_of(categ_feats), as.character))
-
- 
 
 dataDF <-
 
@@ -421,10 +255,6 @@ dataDF <-
            x)
 
   }, simplify = TRUE) %>% as.data.frame() %>% droplevels()
-
- 
-
- 
 
 dataDF <-
 
@@ -441,9 +271,6 @@ dataDF <-
  
 
 ## REPEAT PROCESS ABOVE
-
- 
-
 ### NOW MAKE SURE THAT THE COLUMNS ARE IN THE CORRECT FORMAT NEEDED FOR ANALYSIS.
 
 ## Numeric columns
@@ -462,11 +289,7 @@ summary(dataDF)
 
 ```
 
- 
-
 Check for bad data format in case of missing values:
-
- 
 
 ```{r,warning=F, message=F,eval=TRUE,fig.show = 'hold', fig.width=12, fig.height=8}
 
@@ -474,13 +297,9 @@ lapply(features, function(x) identifyMissing(dataDF[[x]]))
 
 ```
 
- 
-
 Make a full report with general checks for problems in the data, the report is included in the folder of the project.
 
 ```{r,warning=F, message=F,eval=FALSE}
-
- 
 
 makeDataReport(dataDF,file=paste0(scriptDataPath,"datasetCheck_problems"), reportTitle="Survival and Clinical data Check")
 
