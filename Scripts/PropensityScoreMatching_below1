@@ -1,4 +1,4 @@
-###################################### This R script was used to clean patient cohort and then perform Propencity based matching ##############################################
+###################################### This R script was used to clean patient cohort and then perform Propensity based matching ##############################################
 #Clean workspace
 rm(list = ls(envir = .GlobalEnv), envir = .GlobalEnv)
 
